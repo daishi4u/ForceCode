@@ -539,6 +539,7 @@
   },
   "scripts": {
     "bump": "npm version patch && git push && git push --tags && vsce publish",
+    "prerelease": "npm version prerelease && git push && git push --tags",
     "compile": "tsc -watch -p ./",
     "postinstall": "node ./node_modules/vscode/bin/install",
     "clean": "rimraf ./dist && rimraf ./node_modules/",
