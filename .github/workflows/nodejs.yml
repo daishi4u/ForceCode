@@ -35,3 +35,4 @@ jobs:
         npm run test
       env:
         CI: true
+        DISPLAY: ":99.0"
