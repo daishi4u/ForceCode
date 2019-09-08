@@ -37,7 +37,7 @@ jobs:
         CI: true
         DISPLAY: ":99.0"
     - name: Upload artifact
-    - uses: actions/upload-artifact@master
+      uses: actions/upload-artifact@master
       with:
         name: fcBuild
         path: coverage
