@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as parsers from './../parsers';
 import * as forceCode from './../forceCode';
-import { codeCovViewService, saveHistoryService, saveService, commandService } from '../services';
+import { codeCovViewService, saveHistoryService, saveService, notifications } from '../services';
 import { saveAura, getAuraDefTypeFromDocument } from './saveAura';
 import { saveApex } from './saveApex';
 import { getAnyTTFromFolder } from '../parsers/open';
@@ -15,7 +15,7 @@ import { FCCancellationToken, ForcecodeCommand } from './forcecodeCommand';
 export class CompileMenu extends ForcecodeCommand {
   constructor() {
     super();
-    this.commandName = 'ForceCode.compileMenu';
+    this.commandName = 'ForceCode.compile';
     this.cancelable = true;
     this.name = 'Saving ';
     this.hidden = false;
@@ -46,18 +46,6 @@ export class CompileMenu extends ForcecodeCommand {
   }
 }
 
-export class CompileContext extends ForcecodeCommand {
-  constructor() {
-    super();
-    this.commandName = 'ForceCode.compile';
-    this.hidden = true;
-  }
-
-  public command(context, selectedResource?) {
-    return commandService.runCommand('ForceCode.compileMenu', context, false);
-  }
-}
-
 export class ForceCompile extends ForcecodeCommand {
   constructor() {
     super();
@@ -66,11 +54,11 @@ export class ForceCompile extends ForcecodeCommand {
   }
 
   public command(context, selectedResource?) {
-    return commandService.runCommand('ForceCode.compileMenu', context, true);
+    return vscode.commands.executeCommand('ForceCode.compile', context, true);
   }
 }
 
-export default function compile(
+export default async function compile(
   document: vscode.TextDocument,
   forceCompile: boolean,
   cancellationToken: FCCancellationToken
@@ -79,7 +67,7 @@ export default function compile(
     return Promise.resolve(false);
   }
   if (document.uri.fsPath.indexOf(vscode.window.forceCode.projectRoot + path.sep) === -1) {
-    vscode.window.showErrorMessage(
+    notifications.showError(
       "The file you are trying to save to the server isn't in the current org's source folder (" +
         vscode.window.forceCode.projectRoot +
         ')'
@@ -95,7 +83,6 @@ export default function compile(
 
   const toolingType: string | undefined = parsers.getToolingType(document);
   const folderToolingType: string | undefined = getAnyTTFromFolder(document.uri);
-  const fileName: string | undefined = parsers.getFileName(document);
   const name: string | undefined = parsers.getName(document, toolingType);
 
   var DefType: string | undefined;
@@ -109,15 +96,30 @@ export default function compile(
   }
 
   if (document.fileName.endsWith('-meta.xml')) {
-    parseString(document.getText(), { explicitArray: false }, function(err, dom) {
-      if (err) {
-        return Promise.reject(err);
-      } else {
-        const metadataType: string = Object.keys(dom)[0];
-        delete dom[metadataType].$;
-        Metadata = dom[metadataType];
+    var tmpMeta = await new Promise((resolve, reject) => {
+      parseString(document.getText(), { explicitArray: false }, function(err, dom) {
+        if (err) {
+          return reject(err);
+        } else {
+          const metadataType: string = Object.keys(dom)[0];
+          delete dom[metadataType].$;
+          Metadata = dom[metadataType];
+          return resolve(Metadata);
+        }
+      });
+    }).then(
+      res => {
+        return res;
+      },
+      reason => {
+        return reason;
       }
-    });
+    );
+    if (tmpMeta instanceof Error) {
+      return Promise.resolve(tmpMeta)
+        .then(finished)
+        .then(updateSaveHistory);
+    }
   }
 
   // Start doing stuff
@@ -143,18 +145,20 @@ export default function compile(
         }
       })
       .then(finished)
-      .catch(onError)
+      .catch(finished)
       .then(updateSaveHistory);
   } else if (folderToolingType && toolingType === undefined) {
-    // This process uses the Metadata API to deploy specific files
-    // This is where we extend it to create any kind of metadata
-    // Currently only Objects and Permission sets ...
-    return Promise.resolve(vscode.window.forceCode)
-      .then(createMetaData)
-      .then(compileMetadata)
-      .then(reportMetadataResults)
+    return createPackageXML([document.fileName], vscode.window.forceCode.storageRoot)
+      .then(() => {
+        const files: string[] = [];
+        var pathSplit: string[] = document.fileName.split(path.sep);
+        //foldName = foldName.substring(0, foldName.lastIndexOf('.'));
+        files.push(path.join(pathSplit[pathSplit.length - 2], pathSplit[pathSplit.length - 1]));
+        files.push('package.xml');
+        return deployFiles(files, cancellationToken, vscode.window.forceCode.storageRoot);
+      })
       .then(finished)
-      .catch(onError)
+      .catch(finished)
       .then(updateSaveHistory);
   } else if (toolingType === undefined) {
     return Promise.reject({ message: 'Metadata Describe Error. Please try again.' });
@@ -162,12 +166,12 @@ export default function compile(
     DefType = getAuraDefTypeFromDocument(document);
     return saveAura(document, toolingType, cancellationToken, Metadata, forceCompile)
       .then(finished)
-      .catch(onError)
+      .catch(finished)
       .then(updateSaveHistory);
   } else if (toolingType === 'LightningComponentResource') {
     return saveLWC(document, toolingType, cancellationToken, forceCompile)
       .then(finished)
-      .catch(onError)
+      .catch(finished)
       .then(updateSaveHistory);
   } else {
     // This process uses the Tooling API to compile special files like Classes, Triggers, Pages, and Components
@@ -178,95 +182,20 @@ export default function compile(
           return true;
         });
       })
-      .catch(onError)
+      .catch(finished)
       .then(updateSaveHistory);
   }
 
-  // =======================================================================================================================================
-  // ================================                  All Metadata                  ===========================================
-  // =======================================================================================================================================
-
-  function createMetaData() {
-    let text: string = document.getText();
-
-    return new Promise(function(resolve, reject) {
-      if (Metadata) {
-        resolve(Metadata);
-        return;
-      }
-      if (!folderToolingType) {
-        reject({
-          message: 'Unknown metadata type. Make sure your project folders are set up properly.',
-        });
-        return;
-      }
-      const ffNameParts: string[] = document.fileName
-        .split(vscode.window.forceCode.projectRoot + path.sep)[1]
-        .split(path.sep);
-      var folderedName: string;
-      if (ffNameParts.length > 2) {
-        // we have foldered metadata
-        ffNameParts.shift();
-        folderedName = ffNameParts.join('/').split('.')[0];
-      }
-      parseString(text, { explicitArray: false, async: true }, function(err, result) {
-        if (err) {
-          reject(err);
-          return;
-        }
-        var metadata: any = result[folderToolingType];
-        if (metadata) {
-          delete metadata['$'];
-          delete metadata['_'];
-          metadata.fullName = folderedName ? folderedName : fileName;
-          resolve(metadata);
-          return;
-        }
-        reject({ message: folderToolingType + ' metadata type not found in org' });
-        return;
-      });
-    });
-  }
-
-  function compileMetadata(metadata: any) {
-    if (!folderToolingType) {
-      return Promise.reject({
-        message: 'Unknown metadata type. Make sure your project folders are set up properly.',
-      });
-    }
-    return vscode.window.forceCode.conn.metadata.upsert(folderToolingType, [metadata]);
-  }
-
-  function reportMetadataResults(result: any) {
-    if (Array.isArray(result) && result.length && !result.some(i => !i.success)) {
-      vscode.window.forceCode.showStatus('Successfully deployed ' + result[0].fullName);
-      return result;
-    } else if (Array.isArray(result) && result.length && result.some(i => !i.success)) {
-      let error: string =
-        result
-          .filter(i => !i.success)
-          .map(i => i.fullName)
-          .join(', ') + ' Failed';
-      vscode.window.showErrorMessage(error);
-      throw { message: error };
-    } else if (typeof result === 'object' && result.success) {
-      vscode.window.forceCode.showStatus('Successfully deployed ' + result.fullName);
-      return result;
-    } else {
-      var error: any = result.errors ? result.errors[0] : 'Unknown Error';
-      vscode.window.showErrorMessage(error);
-      throw { message: error };
-    }
-  }
-
-  // =======================================================================================================================================
   function finished(res: any): boolean {
     if (isEmptyUndOrNull(res)) {
-      vscode.window.forceCode.showStatus(`${name} ${DefType ? DefType : ''} $(check)`);
+      notifications.showStatus(`${name} ${DefType ? DefType : ''} $(check)`);
       return true;
     }
     var failures: number = 0;
-    if (res.records && res.records.length > 0) {
+    if (res instanceof Error) {
+      onError(res);
+      failures++;
+    } else if (res.records && res.records.length > 0) {
       res.records
         .filter((r: any) => r.State !== 'Error')
         .forEach((containerAsyncRequest: any) => {
@@ -330,12 +259,12 @@ export default function compile(
           }
         }
       }
-      vscode.window.forceCode.showStatus(`${name} ${DefType ? DefType : ''} $(check)`);
+      notifications.showStatus(`${name} ${DefType ? DefType : ''} $(check)`);
       return true;
-    } else if (diagnostics.length === 0) {
-      vscode.window.showErrorMessage(res.message ? res.message : res);
+    } else if (diagnostics.length === 0 && errMessages.length === 0) {
+      notifications.showError(res.message ? res.message : res);
     }
-    vscode.window.showErrorMessage(
+    notifications.showError(
       'File not saved due to build errors. Please open the Problems panel for more details.'
     );
     return false;
@@ -350,24 +279,29 @@ export default function compile(
     if (errMsg.indexOf('expired access/refresh token') !== -1) {
       throw err;
     }
-    const matchRegex = /:(\d+),(\d+):|:(\d+),(\d+) :|\[(\d+),(\d+)\]/; // this will match :12,3432: :12,3432 : and [12,3432]
-    var errSplit = errMsg.split('Message:').pop();
-    var theerr: string = errSplit ? errSplit : errMsg;
-    errSplit = theerr.split(': Source').shift();
-    theerr = errSplit ? errSplit : theerr;
-    var match = errMsg.match(matchRegex);
+    var theerr: string;
     var failureLineNumber: number = 1;
     var failureColumnNumber: number = 0;
-    if (match) {
-      match = match.filter(mat => mat); // eliminate all undefined elements
-      errSplit = theerr.split(match[0]).pop();
-      theerr = (errSplit ? errSplit : theerr).trim(); // remove the line information from the error message if 'Message:' wasn't part of the string
-      const row = match[1];
-      const col = match[2];
-      failureLineNumber = Number.parseInt(row);
-      failureLineNumber =
-        failureLineNumber < 1 || failureLineNumber > document.lineCount ? 1 : failureLineNumber;
-      failureColumnNumber = Number.parseInt(col);
+    try {
+      const matchRegex = /:(\d+),(\d+):|:(\d+),(\d+) :|\[(\d+),(\d+)\]/; // this will match :12,3432: :12,3432 : and [12,3432]
+      var errSplit = errMsg.split('Message:').pop();
+      theerr = errSplit ? errSplit : errMsg;
+      errSplit = theerr.split(': Source').shift();
+      theerr = errSplit ? errSplit : theerr;
+      var match = errMsg.match(matchRegex);
+      if (match) {
+        match = match.filter(mat => mat); // eliminate all undefined elements
+        errSplit = theerr.split(match[0]).pop();
+        theerr = (errSplit ? errSplit : theerr).trim(); // remove the line information from the error message if 'Message:' wasn't part of the string
+        const row = match[1];
+        const col = match[2];
+        failureLineNumber = Number.parseInt(row);
+        failureLineNumber =
+          failureLineNumber < 1 || failureLineNumber > document.lineCount ? 1 : failureLineNumber;
+        failureColumnNumber = Number.parseInt(col);
+      }
+    } catch (e) {
+      theerr = errMsg;
     }
     var failureRange: vscode.Range = document.lineAt(failureLineNumber - 1).range;
     if (failureColumnNumber - 1 >= 0) {

@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
-import { fcConnection, FCOauth } from '.';
+import { fcConnection, FCOauth, notifications } from '.';
 import { isWindows } from './operatingSystem';
 import { SpawnOptions, spawn } from 'child_process';
 import { FCCancellationToken } from '../commands/forcecodeCommand';
+import { inDebug } from './fcAnalytics';
 const kill = require('tree-kill');
 
 export interface SFDX {
@@ -63,10 +64,10 @@ export default class DXService {
   }
 
   /*
-   *   This does all the work. It will run a cli command through the built in dx.
-   *   Takes a command as an argument and a string for the command's arguments.
+   *   This does all the work. It will run a cli command through the shell.
+   *   Takes a string for the command and the command's arguments.
    */
-  private runCommand(
+  public runCommand(
     cmdString: string,
     targetusername: boolean,
     cancellationToken?: FCCancellationToken
@@ -79,7 +80,7 @@ export default class DXService {
         : '');
 
     if (isWindows()) {
-      fullCommand = 'cmd /c' + fullCommand;
+      fullCommand = 'cmd /c ' + fullCommand;
     }
     const error = new Error(); // Get stack here to use for later
 
@@ -89,7 +90,9 @@ export default class DXService {
 
     const parts = fullCommand.split(' ');
     const commandName = parts[0];
-    const args = parts.slice(1);
+    const args = parts.slice(1).map(arg => {
+      return arg.split('#FC*SPACE*#').join(' ');
+    });
 
     const spawnOpt: SpawnOptions = {
       // Always use json in stdout
@@ -114,11 +117,17 @@ export default class DXService {
         });
 
         cmd.stderr.on('data', data => {
-          console.warn('srderr', data);
+          var theErr: string = data.toString();
+          notifications.writeLog(theErr);
+          if (theErr) {
+            theErr = theErr.toLowerCase();
+            sfdxNotFound =
+              theErr.indexOf('not found') > -1 || theErr.indexOf('not recognized') > -1;
+          }
         });
 
         cmd.on('error', data => {
-          console.error('err', data);
+          notifications.writeLog(data);
           sfdxNotFound = data.message.indexOf('ENOENT') > -1;
         });
 
@@ -127,19 +136,22 @@ export default class DXService {
           try {
             json = JSON.parse(stdout);
           } catch (e) {
-            console.warn(`No parsable results from command "${fullCommand}"`);
+            notifications.writeLog(`No parsable results from command "${fullCommand}"`);
           }
           if (sfdxNotFound) {
             // show the user a message that the SFDX CLI isn't installed
-            vscode.window.showErrorMessage(
+            notifications.showError(
               'ForceCode: The SFDX CLI could not be found. Please download from [https://developer.salesforce.com/tools/sfdxcli](https://developer.salesforce.com/tools/sfdxcli) and install, then restart Visual Studio Code.'
             );
           }
           // We want to resolve if there's an error with parsable results
           if ((code > 0 && !json) || (json && json.status > 0 && !json.result)) {
             // Get non-promise stack for extra help
-            console.warn(error);
-            return reject(error);
+            notifications.writeLog(error);
+            notifications.writeLog(json);
+            return reject(
+              json && json.message ? json.message : error && error.message ? error.message : error
+            );
           } else {
             return resolve(json ? json.result : undefined);
           }
@@ -148,7 +160,7 @@ export default class DXService {
     });
 
     async function killPromise() {
-      console.log('Cancelling task...');
+      notifications.writeLog('Cancelling task...');
       return new Promise((resolve, reject) => {
         kill(pid, 'SIGKILL', (err: {}) => {
           err ? reject(err) : resolve();
@@ -161,6 +173,7 @@ export default class DXService {
     file: string,
     cancellationToken: FCCancellationToken
   ): Promise<ExecuteAnonymousResult> {
+    file = file.split(' ').join('#FC*SPACE*#');
     return this.runCommand('apex:execute --apexcodefile ' + file, true, cancellationToken);
   }
 
@@ -189,9 +202,10 @@ export default class DXService {
   public getDebugLog(logid: string | undefined): Promise<string> {
     var theLogId: string = '';
     if (logid) {
-      theLogId += '--logid ' + logid;
+      theLogId += ' --logid ' + logid;
     }
-    return this.runCommand('apex:log:get ' + theLogId, true).then(log => {
+    return this.runCommand('apex:log:get' + theLogId, true).then(log => {
+      log = log[0] ? log[0] : log;
       return Promise.resolve(log.log);
     });
   }
@@ -201,7 +215,9 @@ export default class DXService {
       id = 'debugLog';
     }
     return vscode.workspace
-      .openTextDocument(vscode.Uri.parse(`sflog://salesforce.com/${id}.log?q=${new Date()}`))
+      .openTextDocument(
+        vscode.Uri.parse(`sflog://salesforce.com/${new Date().toISOString()}.log?q=${id}`)
+      )
       .then(function(_document: vscode.TextDocument) {
         if (_document.getText() !== '') {
           return vscode.window.showTextDocument(_document, 3, true);
@@ -220,12 +236,19 @@ export default class DXService {
   }
 
   public openOrgPage(url: string): Promise<any> {
-    return this.runCommand('org:open -p ' + url, true);
+    return this.runCommand('org:open -p ' + encodeURIComponent(url), true);
   }
 
   public createScratchOrg(options: string, cancellationToken: FCCancellationToken): Promise<any> {
     const curConnection = fcConnection.currentConnection;
     if (curConnection) {
+      // TODO: Fix stubbing the call to create scratch org
+      if (inDebug()) {
+        return Promise.resolve({
+          orgId: '00D1N00000AAAAAAAA',
+          username: 'test@test.com',
+        });
+      }
       return this.runCommand(
         'org:create ' + options + ' --targetdevhubusername ' + curConnection.orgInfo.username,
         false,

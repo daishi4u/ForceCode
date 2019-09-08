@@ -1,5 +1,41 @@
 ## Change Log
 
+* 3.18.3
+    * Fix `Package not retrieved via Retrieve Package menu option` #312
+    * Fix deploying certain metadata types.
+* 3.18.2
+    * Fix `Relationship fields not displayed` #306
+    * Fix `e.split is not a function` #307
+* 3.18.1
+    * Fix not showing errors when metadata has a syntax error
+    * Fix not refreshing an expired access token when saving a static resource
+* 3.18.0
+    * Performance improvements on startup
+    * Execute anonymous output is now shown in a document like Apex test logs
+    * Logging output is now shown in the Forcecode output panel
+    * Show debug logs with dated names
+    * Fix execute anonymous when project folder contains a space
+    * Fix error related to ForceCode.treeDataProvider
+    * Fix not catching some SFDX CLI errors
+    * Fix Execute Anonymous functionality
+    * Fix window not reloading when creating a project in a folder that's already open in VSCode
+    * Fix various menus throwing errors when the user canceled or didn't make a selection
+    * Add `bulkLoaderPollTimeout` setting in workspace settings to control the bulk load timeout. Default is 60000 (1 minute)
+    * Add inline run test button to test classes listed in the Code Coverage view
+    * Add inline cancel task button on cancellable running tasks
+    * Add number of lines covered in Forcecode Code Coverage view hovers
+    * Add time saved to end of SUCCESS! in save history view tooltip
+    * Add option to cancel Apex save when it times out. This avoids receiving the container request error.
+* 3.17.4
+    * Fix issue with extension not loading
+    * Fix issues retrieving debug logs
+* 3.17.2
+    * Fix being able to create a scratch org
+    * Open Lightning when checking deployment status or opening file in org
+    * Fix issue with receiving error about not being able to find the SFDX CLI when trying to view deployment error details
+    * Fix issue with logging in when clicking on an org in the saved usernames list with a yellow circle
+* 3.17.1
+    * Fix users not receiving error message when SFDX wasn't installed on startup.
 * 3.17.0
     * Allow retrieval of managed package reports/dashboards/etc.
     * Fix "Never prompts for diff/overwrite on save for Lightning Web Components" #280

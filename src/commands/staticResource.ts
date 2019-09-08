@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import fs = require('fs-extra');
 import path = require('path');
 import globule = require('globule');
-import { zipFiles, commandService } from './../services';
+import { zipFiles, notifications } from './../services';
 import { ForcecodeCommand } from './forcecodeCommand';
 const mime = require('mime-types');
 
@@ -22,7 +22,7 @@ export class StaticResourceDeployFile extends ForcecodeCommand {
 export class StaticResourceBundle extends ForcecodeCommand {
   constructor() {
     super();
-    this.commandName = 'ForceCode.staticResourceMenu';
+    this.commandName = 'ForceCode.staticResource';
     this.name = 'Deploying static resource';
     this.hidden = false;
     this.description = 'Build and Deploy a resource bundle.';
@@ -34,18 +34,6 @@ export class StaticResourceBundle extends ForcecodeCommand {
 
   public command(context, selectedResource?) {
     return staticResourceBundleDeploy(context);
-  }
-}
-
-export class StaticResourceBundleContext extends ForcecodeCommand {
-  constructor() {
-    super();
-    this.commandName = 'ForceCode.staticResource';
-    this.hidden = true;
-  }
-
-  public command(context, selectedResource?) {
-    return commandService.runCommand('ForceCode.staticResourceMenu', context, selectedResource);
   }
 }
 
@@ -62,7 +50,8 @@ export default function staticResourceBundleDeploy(context: vscode.ExtensionCont
       } else {
         return bundleAndDeploy(option).then(deployComplete);
       }
-    });
+    })
+    .catch(onError);
   // =======================================================================================================================================
   function getPackageName(): any {
     let bundleDirectories: any[] = [];
@@ -146,21 +135,23 @@ export function staticResourceDeployFromFile(
 function onError(err: any) {
   var mess =
     'Invalid static resource folder or file name. Name must be in the form of ResourceName.resource.type.subtype\nEXAMPLE: ' +
-    'MyResource.resource.application.javascript\nThis folder would then contain one file, named MyResource.js';
-  vscode.window.showErrorMessage(mess + '\n' + (err.message ? err.message : err));
+    'MyResource.resource.application.javascript\nThis folder would then contain one file, named MyResource.js.\nSee the ' +
+    'ForceCode output panel for more detail.';
+  throw mess + '\n$#FC_LOG_ONLY_#*' + (err.message ? err.message : err);
 }
 
-function bundleAndDeploy(option: any) {
+function bundleAndDeploy(option: vscode.QuickPickItem) {
   let root: string = getPackagePath(option);
-  if (option.detail.includes('zip') || option.detail === 'SPA') {
+  var detail = option.detail ? option.detail : '';
+  if (detail.includes('zip') || detail === 'SPA') {
     let zip: any = zipFiles(getFileList(root), root);
-    return deploy(zip, option.label, option.detail).then(deployComplete);
+    return deploy(zip, option.label, detail);
   } else {
     var ext = '.' + mime.extension(option.detail);
     var data = fs.readFileSync(root + path.sep + option.label + ext).toString('base64');
     return vscode.window.forceCode.conn.metadata.upsert(
       'StaticResource',
-      makeResourceMetadata(option.label, data, option.detail)
+      makeResourceMetadata(option.label, data, detail)
     );
   }
 }
@@ -220,7 +211,7 @@ function getFileList(root: string) {
   // Perform the recursive file search
   return (function innerGetFileList(localPath) {
     var fileslist: any[] = []; // List of files
-    var files: any = fs.readdirSync(localPath); // Files in current'sfdc' directory
+    var files: any = fs.readdirSync(localPath); // Files in current 'sfdc' directory
     var ignoreFiles: any = vscode.workspace.getConfiguration('force')['filesExclude'] || {
       '.gitignore': true,
       '.DS_Store': true,
@@ -298,7 +289,7 @@ function makeResourceMetadata(bundleName: string, cont: any, contType: string) {
 }
 
 function deployComplete(results: any) {
-  vscode.window.forceCode.showStatus(`ForceCode: Deployed ${results.fullName} $(check)`);
+  notifications.showStatus(`ForceCode: Deployed ${results.fullName} $(check)`);
   if (
     vscode.workspace.getConfiguration('force')['autoRefresh'] &&
     vscode.workspace.getConfiguration('force')['browser']
@@ -313,7 +304,7 @@ function deployComplete(results: any) {
 }
 
 function deployAllComplete(results: any) {
-  vscode.window.forceCode.showStatus(`ForceCode: Deployed ${results.length} Resources $(check)`);
+  notifications.showStatus(`ForceCode: Deployed ${results.length} Resources $(check)`);
   if (
     vscode.workspace.getConfiguration('force')['autoRefresh'] &&
     vscode.workspace.getConfiguration('force')['browser']

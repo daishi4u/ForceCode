@@ -1,6 +1,6 @@
 {
   "name": "forcecode",
-  "version": "3.17.0",
+  "version": "3.18.3",
   "publisher": "JohnAaronNelson",
   "displayName": "ForceCode",
   "description": "Visual Studio Code extension for Salesforce (SFDC) development",
@@ -9,7 +9,7 @@
   },
   "license": "MIT",
   "engines": {
-    "vscode": "^1.28.0"
+    "vscode": "^1.36.0"
   },
   "icon": "images/new-logo.png",
   "categories": [
@@ -158,7 +158,19 @@
       },
       {
         "command": "ForceCode.cancelCommand",
-        "title": "Cancel Task"
+        "title": "Cancel Task",
+        "icon": {
+          "light": "./images/cancel.svg",
+          "dark": "./images/cancel.svg"
+        }
+      },
+      {
+        "command": "ForceCode.runTests",
+        "title": "Run Test",
+        "icon": {
+          "light": "./images/runTest.svg",
+          "dark": "./images/runTest.svg"
+        }
       }
     ],
     "keybindings": [
@@ -222,6 +234,11 @@
           "default": 2000,
           "description": "The amount of time in milliseconds between updates when doing bulk CRUD operations."
         },
+        "force.bulkLoaderPollTimeout": {
+          "type": "number",
+          "default": 60000,
+          "description": "The amount of time in milliseconds until a bulk load times out."
+        },
         "force.checkForFileChanges": {
           "type": "boolean",
           "default": false,
@@ -229,7 +246,7 @@
         },
         "force.defaultApiVersion": {
           "type": "string",
-          "default": "45.0",
+          "default": "46.0",
           "description": "The Salesforce API version to use when logging into new orgs. Must be in the format of XX.X. Example: 45.0"
         },
         "force.debugFilter": {
@@ -484,6 +501,16 @@
         {
           "when": "viewItem == forceCodeTask && ForceCodeActive",
           "command": "ForceCode.cancelCommand"
+        },
+        {
+          "when": "viewItem == forceCodeTask && ForceCodeActive",
+          "command": "ForceCode.cancelCommand",
+          "group": "inline"
+        },
+        {
+          "when": "viewItem == fcTestClass && ForceCodeActive",
+          "command": "ForceCode.runTests",
+          "group": "inline"
         }
       ],
       "commandPalette": [
@@ -546,47 +573,54 @@
     }
   },
   "scripts": {
-    "bump": "npm version patch && git push && git push --tags && vsce publish",
+    "major": "npm version major && git push",
+    "minor": "npm version minor && git push",
+    "patch": "npm version patch && git push",
+    "prerelease": "npm version prerelease && git push",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "postinstall": "node ./node_modules/vscode/bin/install",
     "clean": "rimraf ./dist && rimraf ./node_modules/",
-    "test": "node ./node_modules/vscode/bin/test",
-    "package": "vsce package",
-    "vscode:prepublish": "rimraf ./dist && webpack --mode production",
+    "test": "node ./dist/test/runTest.js",
+    "package": "rimraf ./dist && rimraf ./*.vsix && webpack --mode production && vsce package",
     "webpack": "webpack --mode development",
     "webpack-dev": "webpack --mode development --watch"
   },
   "devDependencies": {
     "@types/deepmerge": "2.2.0",
-    "@types/fs-extra": "7.0.0",
+    "@types/fs-extra": "8.0.0",
     "@types/globule": "1.1.3",
     "@types/klaw": "3.0.0",
-    "@types/mocha": "5.2.7",
-    "@types/node": "12.0.10",
-    "@types/universal-analytics": "0.4.2",
+    "@types/mocha": "^5.2.7",
+    "@types/node": "^10.14.17",
+    "@types/sinon": "^7.0.13",
+    "@types/universal-analytics": "0.4.3",
+    "@types/vscode": "1.36.0",
     "@types/xml2js": "0.4.4",
     "compressing": "1.4.0",
-    "deepmerge": "3.3.0",
-    "fs-extra": "8.0.1",
+    "decache": "^4.5.1",
+    "deepmerge": "4.0.0",
+    "fs-extra": "8.1.0",
     "globule": "1.2.1",
-    "jsforce": "1.8.5",
+    "istanbul": "^0.4.5",
+    "jsforce": "1.9.2",
     "klaw": "3.0.0",
     "mime-types": "2.1.24",
+    "mocha": "^6.2.0",
     "os": "0.1.1",
+    "remap-istanbul": "^0.13.0",
     "request-light": "0.2.4",
-    "mocha": "6.1.4",
-    "rimraf": "2.6.3",
+    "rimraf": "^3.0.0",
+    "sinon": "^7.4.2",
     "tree-kill": "1.2.1",
-    "ts-loader": "6.0.4",
-    "tslint": "5.18.0",
-    "typescript": "3.5.2",
+    "ts-loader": "^6.0.4",
+    "tslint": "^5.19.0",
+    "typescript": "^3.6.2",
     "universal-analytics": "0.4.20",
-    "uuid": "3.3.2",
-    "vsce": "1.64.0",
-    "vscode": "1.1.34",
-    "webpack": "4.35.0",
-    "webpack-cli": "3.3.5",
-    "xml2js": "0.4.19"
+    "uuid": "3.3.3",
+    "vsce": "^1.66.0",
+    "vscode-test": "^1.2.0",
+    "webpack": "^4.39.3",
+    "webpack-cli": "^3.3.7",
+    "xml2js": "0.4.22"
   }
 }

@@ -4,10 +4,11 @@ import {
   dxService,
   ApexTestQueryResult,
   apexTestResults,
-  commandService,
+  notifications,
 } from './../services';
 import { ForcecodeCommand } from './forcecodeCommand';
 import { updateDecorations } from '../decorators/testCoverageDecorator';
+import { FCFile } from '../services/codeCovView';
 
 export class ToggleCoverage extends ForcecodeCommand {
   constructor() {
@@ -44,7 +45,11 @@ export class RunTests extends ForcecodeCommand {
   }
 
   public command(context, selectedResource?) {
-    return commandService.runCommand('ForceCode.apexTest', context.name, context.type);
+    var ctv = context;
+    if (context instanceof FCFile) {
+      ctv = { name: context.getWsMember().name, type: 'class' };
+    }
+    return vscode.commands.executeCommand('ForceCode.apexTest', ctv.name, ctv.type);
   }
 }
 
@@ -83,9 +88,9 @@ export class ApexTest extends ForcecodeCommand {
             (curTest.Message ? curTest.Message + '\n' : '');
           //}
         });
-        vscode.window.showErrorMessage(errorMessage);
+        notifications.showError(errorMessage);
       } else {
-        vscode.window.showInformationMessage('ForceCode: All Tests Passed!', 'Ok');
+        notifications.showInfo('ForceCode: All Tests Passed!', 'Ok');
       }
       return dxRes;
     }
@@ -94,17 +99,7 @@ export class ApexTest extends ForcecodeCommand {
         if (!fcConnection.currentConnection) {
           return Promise.reject('No current org info found');
         }
-        var queryString: string =
-          `SELECT Id FROM ApexLog` +
-          ` WHERE LogUserId IN (SELECT Id FROM User WHERE UserName='${
-            fcConnection.currentConnection.orgInfo.username
-          }')` +
-          // ` AND Request = 'API' AND Location = 'SystemLog'` +
-          // ` AND Operation like '%executeAnonymous%'`
-          ` ORDER BY StartTime DESC, Id DESC LIMIT 1`;
-        return vscode.window.forceCode.conn.tooling.query(queryString).then(res => {
-          return dxService.getAndShowLog(res.records[0].Id);
-        });
+        return Promise.resolve(dxService.getAndShowLog(undefined /*res.records[0].Id*/));
       } else {
         return Promise.resolve();
       }

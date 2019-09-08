@@ -5,6 +5,8 @@
 [![Version](https://vsmarketplacebadge.apphb.com/version/JohnAaronNelson.ForceCode.png)](https://marketplace.visualstudio.com/items?itemName=JohnAaronNelson.ForceCode)
 [![Installs](https://vsmarketplacebadge.apphb.com/installs/JohnAaronNelson.ForceCode.png)](https://marketplace.visualstudio.com/items?itemName=JohnAaronNelson.ForceCode)
 [![Ratings](https://vsmarketplacebadge.apphb.com/rating/JohnAaronNelson.ForceCode.png)](https://vsmarketplacebadge.apphb.com/rating/JohnAaronNelson.ForceCode.svg)
+[![Build Status](https://daishi4u.visualstudio.com/Forcecode/_apis/build/status/ForceCodeOrig)](https://daishi4u.visualstudio.com/Forcecode/_build?definitionId=2)
+![Azure DevOps coverage](https://img.shields.io/azure-devops/coverage/daishi4u/Forcecode/2.svg)
 
 ## Overview
 
@@ -14,7 +16,7 @@ There's no complicated setup process or project configurations, no external apps
 
 ## IMPORTANT
 
-As of version 3.17.0, you will be required to install the SFDX-CLI on your system in order for this extension to function! The ability to run a DX command via the ForceCode menu has also been removed because of this change. The extension size has been dramatically reduced because of this change (Went from ~50MB unpackaged to under 2MB!).
+As of version 3.17.0, you will be required to install the SFDX-CLI on your system in order for this extension to function! Please download from [https://developer.salesforce.com/tools/sfdxcli](https://developer.salesforce.com/tools/sfdxcli) and install, then restart Visual Studio Code. The ability to run a DX command via the ForceCode menu has also been removed because of this change. The extension size has been dramatically reduced because of this change (Went from ~50MB unpackaged to under 2MB!).
 
 ## Slack
 
@@ -177,7 +179,7 @@ Deploy your package based on your configured deploy options and the package.xml 
 
 **Options**:
 
-* checkOnly:       Validation only deploy.  Don't actually deploy your code, just make sure it all compiles as a package.  This will generate a `.validationId` file.
+* checkOnly:       Validation only deploy.  Don't actually deploy your code, just make sure it all compiles as a package.
 * ignoreWarnings:  Indicates whether a warning should allow a deployment to complete successfully \(true\) or not \(false\).
 * rollbackOnError: Indicates whether any failure causes a complete rollback \(true\) or not \(false\)
 * runAllTests:     Run all tests in org
@@ -199,7 +201,7 @@ Menu: &gt;Force: Get Logs
 ### Create Class
 
 Menu: &gt;ForceCode Menu ... Create Class  
-This will automatically create classes based on `apiVersion` else it defaults to '44.0'.
+This will automatically create classes based on `apiVersion` else it defaults to '46.0'.
 
 ### Open org
 
@@ -224,7 +226,7 @@ Use this option and ForceCode will create a list of all apex classes and their c
 
 ### Code Completion Refresh
 
-This will grab all sObject data from Salesforce and allow you to use this extension with the Salesforce Apex language extension for code smartness. Make sure you set up the Apex extension correctly by following the instructions [here](https://marketplace.visualstudio.com/items?itemName=salesforce.salesforcedx-vscode-apex)
+This will grab all sObject data from Salesforce and allow you to use this extension with the Salesforce Apex language extension for code smartness. Make sure you set up the Apex extension correctly by following the instructions [here](https://forcedotcom.github.io/salesforcedx-vscode/articles/getting-started/install)
 
 ### Settings
 
@@ -247,7 +249,7 @@ The configuration file will look like the following. You can either edit this fi
 
 ```json
 {
-    "alias": "My Sandbox"
+    "alias": "My Sandbox",
     "apiVersion": "45.0",
     "autoCompile": true,
     "deployOptions": {
@@ -322,6 +324,7 @@ The following settings have been migrated to the workspace settings as well:
 * autoRefresh: If autoCompile is on, and you're working in a resource-bundles folder, the staticResource will automatically compile and deploy to your org.  If autoRefresh is on \(and you're working on a Mac\), the currently active tab in Google Chrome Canary \(or your configured browser\) will be refreshed.  This provides a simple browsersync-like experience without the overhead of browsersync
 * browser: Define which browser you want to reload when the static resource refreshes \(this only works with Macs at the moment\)
 * bulkLoaderPollInterval: The amount of time in milliseconds between updates when doing bulk CRUD operations.
+* bulkLoaderPollTimeout: The amount of time, in milliseconds, to wait for a bulk load operation to complete before timing out. Default is 60000 (1 minute
 * checkForFileChanges: This option, when checked, will allow ForceCode to check for file changes against the server on startup of ForceCode.
 * debugFilter: A regular expression used to match a line for display. The default is to show debug and error lines, so you can filter out the log noise.
 * debugOnly: When executing anonymous, we can either show all the output or only the debug lines.  This makes it easier to debug your code.  Turn if on for the important stuff, and turn it off to get all the detail.

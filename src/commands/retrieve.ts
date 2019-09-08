@@ -2,13 +2,13 @@ import * as vscode from 'vscode';
 import fs = require('fs-extra');
 import * as path from 'path';
 import {
-  commandService,
   codeCovViewService,
   fcConnection,
   FCOauth,
   dxService,
   SObjectCategory,
   PXMLMember,
+  notifications,
 } from '../services';
 import { getToolingTypeFromExt } from '../parsers/getToolingType';
 import { IWorkspaceMember } from '../forceCode';
@@ -26,7 +26,7 @@ import { FCCancellationToken, ForcecodeCommand } from './forcecodeCommand';
 export class Refresh extends ForcecodeCommand {
   constructor() {
     super();
-    this.commandName = 'ForceCode.refreshContext';
+    this.commandName = 'ForceCode.refresh';
     this.cancelable = true;
     this.name = 'Retrieving ';
     this.hidden = true;
@@ -81,18 +81,6 @@ export class Refresh extends ForcecodeCommand {
   }
 }
 
-export class RefreshContext extends ForcecodeCommand {
-  constructor() {
-    super();
-    this.commandName = 'ForceCode.refresh';
-    this.hidden = true;
-  }
-
-  public command(context, selectedResource?) {
-    return commandService.runCommand('ForceCode.refreshContext', context, selectedResource);
-  }
-}
-
 export class RetrieveBundle extends ForcecodeCommand {
   constructor() {
     super();
@@ -132,6 +120,7 @@ export default function retrieve(
   var newWSMembers: IWorkspaceMember[] = [];
   var toolTypes: Array<{}> = [];
   var typeNames: Array<string> = [];
+  var packageName: string | undefined;
 
   return Promise.resolve(vscode.window.forceCode)
     .then(showPackageOptions)
@@ -237,7 +226,7 @@ export default function retrieve(
       };
       return vscode.window.showQuickPick(options, config).then(res => {
         if (!res) {
-          return Promise.reject();
+          return Promise.reject(cancellationToken.cancel());
         }
         return res;
       });
@@ -282,7 +271,7 @@ export default function retrieve(
             'Cannot retrieve more than 10,000 files at a time. Please select "Choose Types..." from the retrieve menu and try to download without Reports selected first.',
         });
       }
-      if (cancellationToken.isCanceled) {
+      if (cancellationToken.isCanceled()) {
         reject();
       }
       var theStream = vscode.window.forceCode.conn.metadata.retrieve({
@@ -320,7 +309,34 @@ export default function retrieve(
       } else if (option.description === 'user-choice') {
         builder();
       } else {
-        reject();
+        packageName = option.description;
+        if (packageName) {
+          packaged();
+        } else {
+          reject();
+        }
+      }
+
+      function packaged() {
+        // option.description is the package name
+        if (cancellationToken.isCanceled()) {
+          reject();
+        }
+        var theStream = vscode.window.forceCode.conn.metadata.retrieve({
+          packageNames: [option.description],
+          apiVersion:
+            vscode.window.forceCode.config.apiVersion ||
+            vscode.workspace.getConfiguration('force')['defaultApiVersion'],
+        });
+        theStream.on('error', error => {
+          reject(
+            error || {
+              message:
+                'There was an error retrieving ' + option.description,
+            }
+          );
+        });
+        resolve(theStream.stream()).catch(reject);
       }
 
       function builder() {
@@ -383,7 +399,7 @@ export default function retrieve(
                 });
               }
             }
-            if (cancellationToken.isCanceled) {
+            if (cancellationToken.isCanceled()) {
               reject();
             }
             try {
@@ -423,7 +439,8 @@ export default function retrieve(
         })
         .on('entry', function(header: any, stream: any, next: any) {
           stream.on('end', next);
-          const name = path.normalize(header.name).replace('unpackaged' + path.sep, '');
+          var name = path.normalize(header.name).replace('unpackaged' + path.sep, '');
+          name = packageName ? name.replace(packageName + path.sep, '') : name;
           if (header.type === 'file') {
             const tType: string | undefined = getToolingTypeFromExt(name);
             const fullName = name.split(path.sep).pop();
@@ -512,13 +529,13 @@ export default function retrieve(
   function finished(res: any): Promise<any> {
     if (res.success) {
       var getCodeCov: boolean = false;
-      console.log('Done retrieving files');
+      notifications.writeLog('Done retrieving files');
       // check the metadata and add the new members
       return updateWSMems().then(() => {
         if (option) {
-          vscode.window.forceCode.showStatus(`Retrieve ${option.description} $(thumbsup)`);
+          notifications.showStatus(`Retrieve ${option.description} $(thumbsup)`);
         } else {
-          vscode.window.forceCode.showStatus(`Retrieve $(thumbsup)`);
+          notifications.showStatus(`Retrieve $(thumbsup)`);
         }
         return Promise.resolve(res);
       });
@@ -550,8 +567,8 @@ export default function retrieve(
         }
       }
 
-      function parseRecords(recs: any[]): Promise<any> {
-        console.log('Done retrieving metadata records');
+      function parseRecords(recs: any[]): Thenable<any> {
+        notifications.writeLog('Done retrieving metadata records');
         recs.some(curSet => {
           return toArray(curSet).some(key => {
             if (key && newWSMembers.length > 0) {
@@ -568,12 +585,12 @@ export default function retrieve(
             }
           });
         });
-        console.log('Done updating/adding metadata');
+        notifications.writeLog('Done updating/adding metadata');
         if (getCodeCov) {
-          return commandService
-            .runCommand('ForceCode.getCodeCoverage', undefined, undefined)
+          return vscode.commands
+            .executeCommand('ForceCode.getCodeCoverage', undefined, undefined)
             .then(() => {
-              console.log('Done retrieving code coverage');
+              notifications.writeLog('Done retrieving code coverage');
               return Promise.resolve();
             });
         } else {
@@ -581,9 +598,9 @@ export default function retrieve(
         }
       }
     } else {
-      vscode.window.showErrorMessage('Retrieve Errors');
+      notifications.showError('Retrieve Errors');
     }
-    vscode.window.forceCode.outputChannel.append(
+    notifications.writeLog(
       outputToString(res)
         .replace(/{/g, '')
         .replace(/}/g, '')

@@ -2,13 +2,13 @@ import * as vscode from 'vscode';
 import {
   ForceService,
   commandViewService,
-  commandService,
   codeCovViewService,
   configuration,
   fcConnection,
   operatingSystem,
   saveService,
   saveHistoryService,
+  notifications,
 } from './services';
 import ForceCodeContentProvider from './providers/ContentProvider';
 import ForceCodeLogProvider from './providers/LogProvider';
@@ -24,57 +24,11 @@ import { ApexTestLinkProvider } from './providers/ApexTestLinkProvider';
 import { getToolingTypeFromFolder, getAnyTTFromFolder } from './parsers/open';
 import { trackEvent, FCTimer } from './services/fcAnalytics';
 import * as fs from 'fs-extra';
+import { createProject } from './commands/createProject';
 
 export function activate(context: vscode.ExtensionContext): any {
-  const startupTimer: FCTimer = new FCTimer('extension.activate');
   context.subscriptions.push(
-    vscode.commands.registerCommand('ForceCode.createProject', () => {
-      vscode.window
-        .showOpenDialog({
-          canSelectFiles: false,
-          canSelectFolders: true,
-          canSelectMany: false,
-          openLabel: `Create Project`,
-        })
-        .then(folder => {
-          if (!folder) {
-            return;
-          }
-          // create default src folder so sfdx doesn't complain about a bad dir
-          const projFolder: string = folder[0].fsPath;
-          if (!fs.existsSync(path.join(projFolder, 'src'))) {
-            fs.mkdirpSync(path.join(projFolder, 'src'));
-          }
-
-          // make a dummy sfdx-project.json file so the Salesforce extensions are activated when we open the project folder
-          if (!fs.existsSync(path.join(projFolder, 'sfdx-project.json'))) {
-            const sfdxProj: {} = {
-              namespace: '',
-              packageDirectories: [
-                {
-                  path: 'src',
-                  default: true,
-                },
-              ],
-              sfdcLoginUrl: 'https://login.salesforce.com',
-              sourceApiVersion: vscode.workspace.getConfiguration('force')['defaultApiVersion'],
-            };
-
-            fs.outputFileSync(
-              path.join(projFolder, 'sfdx-project.json'),
-              JSON.stringify(sfdxProj, undefined, 4)
-            );
-          }
-
-          // make a dummy force.json to activate Forcecode
-          fs.outputFileSync(
-            path.join(projFolder, 'force.json'),
-            JSON.stringify({ lastUsername: '' }, undefined, 4)
-          );
-          // open the folder
-          vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(projFolder));
-        });
-    })
+    vscode.commands.registerCommand('ForceCode.createProject', createProject)
   );
 
   if (!vscode.workspace.workspaceFolders) {
@@ -90,9 +44,17 @@ export function activate(context: vscode.ExtensionContext): any {
     }
   }
 
-  process.env.SFDX_JSON_TO_STDOUT = 'true';
+  const startupTimer: FCTimer = new FCTimer('extension.activate');
+
   commands.fcCommands.forEach(cur => {
-    context.subscriptions.push(vscode.commands.registerCommand(cur.commandName, cur.command));
+    context.subscriptions.push(
+      vscode.commands.registerCommand(cur.commandName, function(
+        context: any,
+        selectedResource: any
+      ): any {
+        return commandViewService.addCommandExecution(cur, context, selectedResource);
+      })
+    );
   });
 
   vscode.window.forceCode = new ForceService(context);
@@ -142,23 +104,23 @@ export function activate(context: vscode.ExtensionContext): any {
         const toolingType: string | undefined = getAnyTTFromFolder(textDocument.uri);
         if (textDocument.uri.fsPath.indexOf(vscode.window.forceCode.projectRoot) !== -1) {
           if (isResource && isResource.index) {
-            return commandService.runCommand(
+            return vscode.commands.executeCommand(
               'ForceCode.staticResourceDeployFromFile',
               context,
               textDocument
             );
-          }
-          if (toolingType) {
-            return commandService.runCommand('ForceCode.compileMenu', textDocument);
+          } else if (toolingType) {
+            return vscode.commands.executeCommand('ForceCode.compile', textDocument);
           }
         } else if (isResource || toolingType) {
-          vscode.window.showErrorMessage(
+          return notifications.showError(
             "The file you are trying to save to the server isn't in the current org's source folder (" +
               vscode.window.forceCode.projectRoot +
               ')'
           );
         }
       }
+      return undefined;
     })
   );
 
@@ -187,7 +149,7 @@ export function activate(context: vscode.ExtensionContext): any {
   context.subscriptions.push(
     vscode.workspace
       .createFileSystemWatcher(path.join(vscode.window.forceCode.workspaceRoot, 'force.json'))
-      .onDidChange(uri => {
+      .onDidChange(_uri => {
         configuration();
       })
   );
@@ -198,7 +160,7 @@ export function activate(context: vscode.ExtensionContext): any {
       .createFileSystemWatcher(
         path.join(vscode.window.forceCode.workspaceRoot, 'sfdx-project.json')
       )
-      .onDidChange(uri => {
+      .onDidChange(_uri => {
         if (vscode.window.forceCode.config.username) {
           fs.copyFileSync(
             path.join(vscode.window.forceCode.workspaceRoot, 'sfdx-project.json'),
