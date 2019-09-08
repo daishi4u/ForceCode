@@ -40,6 +40,6 @@ jobs:
       uses: actions/upload-artifact@master
       with:
         name: fcBuild
-        path: coverage
+        path: coverage/
 
 
