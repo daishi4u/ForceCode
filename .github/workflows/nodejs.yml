@@ -1,0 +1,37 @@
+name: Node CI
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [8.x, 10.x, 12.x]
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v1
+      with:
+        node-version: ${{ matrix.node-version }}
+    - name: npm install, build, and test
+      run: |
+        /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        echo ">>> Started xvfb"
+        openssl aes-256-cbc -d -in assets/server.key.enc -out assets/server.key -k $(SERVER_KEY_PASSWORD)
+        echo ">>> Installing SFDX CLI"
+        npm install -g sfdx-cli
+        sfdx --version
+        sfdx plugins --core
+        sfdx force:auth:jwt:grant --clientid $(SF_CONSUMER_KEY) --jwtkeyfile assets/server.key --username $(SF_USERNAME)
+        npm ci
+        echo ">>> Compiling"
+        npm run compile
+        echo ">>> Run integration test"
+        export SF_USERNAME=$(SF_USERNAME)
+        npm run test
+      env:
+        CI: true
