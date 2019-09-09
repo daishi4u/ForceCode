@@ -37,9 +37,20 @@ jobs:
         CI: true
         DISPLAY: ":99.0"
     - name: Upload artifact
+      if: success()
+      uses: actions/upload-artifact@master
+      with:
+        name: fcCoverage
+        path: coverage/
+    - name: Build package
+      if: success()
+      run: |
+        echo ">>> Build package"
+        npm run package
+    - name: Upload package
+      if: success()
       uses: actions/upload-artifact@master
       with:
         name: fcBuild
-        path: coverage/
-
-
+        path: "*.vsix"
+        
